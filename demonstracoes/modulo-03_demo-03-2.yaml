@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: IaC para provisionamento de estrutura de ambiente de demonstracao
+
+Parameters:
+  HostedZone:
+    Description: Hosted Zone Name
+    Type: String
+    Default: cloud.wfercosta.com.
+
+  ResourceRecordUS:
+    Description: DNS
+    Type: String
+    Default: fc-m03-d03-us-alb-rr-if-1560266811.us-east-1.elb.amazonaws.com.
+
+  ResourceRecordBR:
+    Description: DNS
+    Type: String
+    Default: fc-m03-d03-us-alb-rr-if-1560266811.us-east-1.elb.amazonaws.com.
+
+Resources:
+  RecordSetGroupWeighted:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Ref HostedZone
+      RecordSets:
+        - Name: !Sub "weighted.${HostedZone}"
+          Type: CNAME
+          TTL: 60
+          SetIdentifier: us-east-1
+          Weight: 50
+          ResourceRecords:
+            - !Ref ResourceRecordUS
+        - Name: !Sub "weighted.${HostedZone}"
+          Type: CNAME
+          TTL: 60
+          SetIdentifier: sa-east-1
+          Weight: 50
+          ResourceRecords:
+            - !Ref ResourceRecordBR
+
+  RecordSetGroupGeo:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Ref HostedZone
+      RecordSets:
+        - Name: !Sub "geo.${HostedZone}"
+          Type: CNAME
+          TTL: 60
+          SetIdentifier: global
+          GeoLocation:
+            CountryCode: "*"
+          ResourceRecords:
+            - !Ref ResourceRecordUS
+        - Name: !Sub "geo.${HostedZone}"
+          Type: CNAME
+          TTL: 60
+          SetIdentifier: us-east-1
+          GeoLocation:
+            CountryCode: US
+          ResourceRecords:
+            - !Ref ResourceRecordUS
+        - Name: !Sub "geo.${HostedZone}"
+          Type: CNAME
+          TTL: 60
+          SetIdentifier: sa-east-1
+          GeoLocation:
+            CountryCode: BR
+          ResourceRecords:
+            - !Ref ResourceRecordBR

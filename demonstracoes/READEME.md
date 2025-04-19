@@ -81,19 +81,30 @@ aws --region us-east-1 cloudformation delete-stack --stack-name fc-m03-d02
 
 ```
 aws --region us-east-1 \
-    cloudformation create-stack --stack-name fc-m03-d03-1-us \
+    cloudformation create-stack --stack-name fc-m03-d03-us \
         --capabilities CAPABILITY_NAMED_IAM \
         --template-body file://modulo-03_demo-03-1.yaml \
-        --parameters ParameterKey=AvailabilityZones,ParameterValue="us-east-1a\,us-east-1b"
+        --parameters \
+            ParameterKey=AvailabilityZones,ParameterValue="us-east-1a\,us-east-1b" \
+            ParameterKey=AMI,ParameterValue=ami-084568db4383264d4
 
 aws --region sa-east-1 \
-    cloudformation create-stack --stack-name fc-m03-d03-1-sa \
+    cloudformation create-stack --stack-name fc-m03-d03-sa \
         --capabilities CAPABILITY_NAMED_IAM \
         --template-body file://modulo-03_demo-03-1.yaml \
-        --parameters ParameterKey=AvailabilityZones,ParameterValue="sa-east-1a\,sa-east-1b"
+        --parameters \
+            ParameterKey=AvailabilityZones,ParameterValue="sa-east-1a\,sa-east-1c" \
+            ParameterKey=AMI,ParameterValue=ami-0d866da98d63e2b42
+
+aws --region us-east-1 \
+    cloudformation create-stack --stack-name fc-m03-d03-r53 \
+        --capabilities CAPABILITY_NAMED_IAM \
+        --template-body file://modulo-03_demo-03-2.yaml
+
 ```
 
 ```
-aws --region us-east-1 cloudformation delete-stack --stack-name fc-m03-d03-1-us
-aws --region sa-east-1 cloudformation delete-stack --stack-name fc-m03-d03-1-sa
+aws --region us-east-1 cloudformation delete-stack --stack-name fc-m03-d03-r53
+aws --region us-east-1 cloudformation delete-stack --stack-name fc-m03-d03-us
+aws --region sa-east-1 cloudformation delete-stack --stack-name fc-m03-d03-sa
 ```
