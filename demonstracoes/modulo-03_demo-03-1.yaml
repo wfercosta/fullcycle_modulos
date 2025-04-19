@@ -32,11 +32,6 @@ Parameters:
     Type: String
     Default: t2.micro
 
-  DomainName:
-    Description: Domain name
-    Type: String
-    Default: laboratorio.com.br
-
 Resources:
   VPC:
     Type: AWS::EC2::VPC
@@ -449,10 +444,10 @@ Resources:
         - Key: Name
           Value: !Sub "${AWS::StackName}-node02"
 
-  TagetGroupNode01:
+  TagetGroupNodes:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub "${AWS::StackName}-node01-tg"
+      Name: !Sub "${AWS::StackName}-all-nodes-tg"
       HealthCheckIntervalSeconds: 30
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2
@@ -463,20 +458,6 @@ Resources:
       TargetType: instance
       Targets:
         - Id: !Ref InstanceNode01
-
-  TagetGroupNode02:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      Name: !Sub "${AWS::StackName}-node02-tg"
-      HealthCheckIntervalSeconds: 30
-      HealthyThresholdCount: 2
-      UnhealthyThresholdCount: 2
-      Port: 80
-      Protocol: HTTP
-      HealthCheckPath: /
-      VpcId: !Ref VPC
-      TargetType: instance
-      Targets:
         - Id: !Ref InstanceNode02
 
   SecurityGroupALBRoundRobin:
@@ -513,48 +494,8 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       DefaultActions:
-        - Type: fixed-response
-          FixedResponseConfig:
-            ContentType: "text/html"
-            MessageBody: "Not Found"
-            StatusCode: 404
+        - Type: forward
+          TargetGroupArn: !Ref TagetGroupNodes
       LoadBalancerArn: !Ref ALBRoundRobin
       Port: 80
       Protocol: HTTP
-
-  ALBRoundRobinRulePathRuleUsersAndHost:
-    Type: AWS::ElasticLoadBalancingV2::ListenerRule
-    Properties:
-      ListenerArn: !Ref ALBRoundRobinHttpListener
-      Priority: 100
-      Actions:
-        - Type: forward
-          ForwardConfig:
-            TargetGroups:
-              - TargetGroupArn: !Ref TagetGroupNode02
-      Conditions:
-        - Field: host-header
-          HostHeaderConfig:
-            Values:
-              - !Sub "api.${DomainName}"
-        - Field: path-pattern
-          PathPatternConfig:
-            Values:
-              - /users
-              - /users/*
-
-  ALBRoundRobinRuleHostRootSite:
-    Type: AWS::ElasticLoadBalancingV2::ListenerRule
-    Properties:
-      ListenerArn: !Ref ALBRoundRobinHttpListener
-      Priority: 200
-      Actions:
-        - Type: forward
-          ForwardConfig:
-            TargetGroups:
-              - TargetGroupArn: !Ref TagetGroupNode01
-      Conditions:
-        - Field: host-header
-          HostHeaderConfig:
-            Values:
-              - !Ref DomainName

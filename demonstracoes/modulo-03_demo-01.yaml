@@ -4,8 +4,8 @@ Description: IaC para provisionamento de estrutura de ambiente de demonstracao
 Parameters:
   AvailabilityZones:
     Description: Zonas de disponibilidade
-    Type: String
-    Default: "us-east-1a,us-east-1b"
+    Type: CommaDelimitedList
+    Default: us-east-1a, us-east-1b
 
   VpcCidr:
     Description: CIDR para esta VPC
@@ -14,13 +14,13 @@ Parameters:
 
   SubnetCidrPublic:
     Description: CIDR para a subnet desta  VPC
-    Type: String
-    Default: "10.0.1.0/24,10.0.2.0/24"
+    Type: CommaDelimitedList
+    Default: 10.0.1.0/24, 10.0.2.0/24
 
   SubnetCidrPrivate:
     Description: CIDR para a subnet desta  VPC
-    Type: String
-    Default: "10.0.3.0/24,10.0.4.0/24"
+    Type: CommaDelimitedList
+    Default: 10.0.3.0/24, 10.0.4.0/24
 
   AMI:
     Description: AMI ID
@@ -50,8 +50,8 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [0, !Split [",", !Ref AvailabilityZones]]
-      CidrBlock: !Select [0, !Split [",", !Ref SubnetCidrPublic]]
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      CidrBlock: !Select [0, !Ref SubnetCidrPublic]
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -59,7 +59,7 @@ Resources:
             - ""
             - - !Ref AWS::StackName
               - "-public-subnet-"
-              - !Select [0, !Split [",", !Ref AvailabilityZones]]
+              - !Select [0, !Ref AvailabilityZones]
         - Key: Application
           Value: !Ref "AWS::StackName"
 
@@ -67,8 +67,8 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [1, !Split [",", !Ref AvailabilityZones]]
-      CidrBlock: !Select [1, !Split [",", !Ref SubnetCidrPublic]]
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      CidrBlock: !Select [1, !Ref SubnetCidrPublic]
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -76,7 +76,7 @@ Resources:
             - ""
             - - !Ref AWS::StackName
               - "-public-subnet-"
-              - !Select [1, !Split [",", !Ref AvailabilityZones]]
+              - !Select [1, !Ref AvailabilityZones]
         - Key: Application
           Value: !Ref "AWS::StackName"
 
@@ -84,8 +84,8 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [0, !Split [",", !Ref AvailabilityZones]]
-      CidrBlock: !Select [0, !Split [",", !Ref SubnetCidrPrivate]]
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      CidrBlock: !Select [0, !Ref SubnetCidrPrivate]
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -93,7 +93,7 @@ Resources:
             - ""
             - - !Ref AWS::StackName
               - "-private-subnet-"
-              - !Select [0, !Split [",", !Ref AvailabilityZones]]
+              - !Select [0, !Ref AvailabilityZones]
         - Key: Application
           Value: !Ref "AWS::StackName"
 
@@ -101,8 +101,8 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [1, !Split [",", !Ref AvailabilityZones]]
-      CidrBlock: !Select [1, !Split [",", !Ref SubnetCidrPrivate]]
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      CidrBlock: !Select [1, !Ref SubnetCidrPrivate]
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -110,7 +110,7 @@ Resources:
             - ""
             - - !Ref AWS::StackName
               - "-private-subnet-"
-              - !Select [1, !Split [",", !Ref AvailabilityZones]]
+              - !Select [1, !Ref AvailabilityZones]
         - Key: Application
           Value: !Ref "AWS::StackName"
 
