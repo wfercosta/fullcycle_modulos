@@ -341,8 +341,8 @@ Resources:
 
               Alias /users /var/www/html
 
-              ErrorLog ${APACHE_LOG_DIR}/error.log
-              CustomLog ${APACHE_LOG_DIR}/access.log combined
+              ErrorLog ${!APACHE_LOG_DIR}/error.log
+              CustomLog ${!APACHE_LOG_DIR}/access.log combined
           </VirtualHost>
           " > /etc/apache2/sites-available/000-default.conf
 
@@ -427,8 +427,8 @@ Resources:
 
               Alias /users /var/www/html
 
-              ErrorLog ${APACHE_LOG_DIR}/error.log
-              CustomLog ${APACHE_LOG_DIR}/access.log combined
+              ErrorLog ${!APACHE_LOG_DIR}/error.log
+              CustomLog ${!APACHE_LOG_DIR}/access.log combined
           </VirtualHost>
           " > /etc/apache2/sites-available/000-default.conf
 
