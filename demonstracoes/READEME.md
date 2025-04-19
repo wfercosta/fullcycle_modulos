@@ -114,8 +114,11 @@ export ALB_RR_REGION_US="$(aws --region us-east-1 elbv2 describe-load-balancers 
             --query 'LoadBalancers[?LoadBalancerName==`fc-m03-d03-us-alb-rr-if`].DNSName | [0]' --output text)"
 export ALB_RR_REGION_BR="$(aws --region sa-east-1 elbv2 describe-load-balancers \
             --query 'LoadBalancers[?LoadBalancerName==`fc-m03-d03-sa-alb-rr-if`].DNSName | [0]' --output text)"
-export HOSTED_ZONE_NAME=cloud.wfercosta.com
 clear; echo "$ALB_RR_REGION_US, $ALB_RR_REGION_BR"
+```
+
+```
+export HOSTED_ZONE_NAME=<PUBLIC_HOSTED_ZONE_NAME>
 ```
 
 ```
