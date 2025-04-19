@@ -5,7 +5,7 @@ Parameters:
   HostedZone:
     Description: Hosted Zone Name
     Type: String
-    Default: cloud.wfercosta.com.
+    Default: cloud.example.com
 
   ResourceRecordUS:
     Description: DNS
@@ -21,16 +21,16 @@ Resources:
   RecordSetGroupWeighted:
     Type: AWS::Route53::RecordSetGroup
     Properties:
-      HostedZoneName: !Ref HostedZone
+      HostedZoneName: !Sub "${HostedZone}."
       RecordSets:
-        - Name: !Sub "weighted.${HostedZone}"
+        - Name: !Sub "weighted.${HostedZone}."
           Type: CNAME
           TTL: 60
           SetIdentifier: us-east-1
           Weight: 50
           ResourceRecords:
             - !Ref ResourceRecordUS
-        - Name: !Sub "weighted.${HostedZone}"
+        - Name: !Sub "weighted.${HostedZone}."
           Type: CNAME
           TTL: 60
           SetIdentifier: sa-east-1
@@ -41,9 +41,9 @@ Resources:
   RecordSetGroupGeo:
     Type: AWS::Route53::RecordSetGroup
     Properties:
-      HostedZoneName: !Ref HostedZone
+      HostedZoneName: !Sub "${HostedZone}."
       RecordSets:
-        - Name: !Sub "geo.${HostedZone}"
+        - Name: !Sub "geo.${HostedZone}."
           Type: CNAME
           TTL: 60
           SetIdentifier: global
@@ -51,7 +51,7 @@ Resources:
             CountryCode: "*"
           ResourceRecords:
             - !Ref ResourceRecordUS
-        - Name: !Sub "geo.${HostedZone}"
+        - Name: !Sub "geo.${HostedZone}."
           Type: CNAME
           TTL: 60
           SetIdentifier: us-east-1
@@ -59,7 +59,7 @@ Resources:
             CountryCode: US
           ResourceRecords:
             - !Ref ResourceRecordUS
-        - Name: !Sub "geo.${HostedZone}"
+        - Name: !Sub "geo.${HostedZone}."
           Type: CNAME
           TTL: 60
           SetIdentifier: sa-east-1

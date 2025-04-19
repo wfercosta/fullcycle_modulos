@@ -21,7 +21,7 @@ clear; echo "$ALB_RR_DNS_NAME > $ALB_RR_DNS_IP"
 clear; curl -fsSL http://$ALB_RR_DNS_NAME | sed -e 's/<[^>]*>//g'
 
 clear; i=0; while [ $i -lt 20 ]; do echo $i; i=$((i+1)); \
-    curl -fsSL http://$ALB_RR_DNS_NAME | sed -e 's/<[^>]*>//g' \
+    curl -fsSL http://$ALB_RR_DNS_NAME \
         | sed -e 's/<[^>]*>//g' >> fc-m03-d01-alb-rr-if.log; done; sort fc-m03-d01-alb-rr-if.log | uniq -c
 
 ```
@@ -37,7 +37,7 @@ clear; echo "$ALB_RR_WTD_DNS_NAME > $ALB_RR_WTD_DNS_IP"
 clear; curl -fsSL http://$ALB_RR_WTD_DNS_NAME | sed -e 's/<[^>]*>//g'
 
 clear; i=0; while [ $i -lt 20 ]; do echo $i; i=$((i+1)); \
-    curl -fsSL http://$ALB_RR_WTD_DNS_NAME | sed -e 's/<[^>]*>//g' \
+    curl -fsSL http://$ALB_RR_WTD_DNS_NAME \
         | sed -e 's/<[^>]*>//g' >> fc-m03-d01-alb-rr-wtd-if.log; done; sort fc-m03-d01-alb-rr-wtd-if.log | uniq -c
 
 ```
@@ -95,12 +95,39 @@ aws --region sa-east-1 \
         --parameters \
             ParameterKey=AvailabilityZones,ParameterValue="sa-east-1a\,sa-east-1c" \
             ParameterKey=AMI,ParameterValue=ami-0d866da98d63e2b42
+```
 
+```
+export ALB_RR_REGION_US="$(aws --region us-east-1 elbv2 describe-load-balancers \
+            --query 'LoadBalancers[?LoadBalancerName==`fc-m03-d03-us-alb-rr-if`].DNSName | [0]' --output text)"
+export ALB_RR_REGION_BR="$(aws --region sa-east-1 elbv2 describe-load-balancers \
+            --query 'LoadBalancers[?LoadBalancerName==`fc-m03-d03-sa-alb-rr-if`].DNSName | [0]' --output text)"
+export HOSTED_ZONE_NAME=cloud.wfercosta.com
+clear; echo "$ALB_RR_REGION_US, $ALB_RR_REGION_BR"
+```
+
+```
 aws --region us-east-1 \
     cloudformation create-stack --stack-name fc-m03-d03-r53 \
         --capabilities CAPABILITY_NAMED_IAM \
-        --template-body file://modulo-03_demo-03-2.yaml
+        --template-body file://modulo-03_demo-03-2.yaml \
+        --parameters \
+            ParameterKey=HostedZone,ParameterValue="$HOSTED_ZONE_NAME" \
+            ParameterKey=ResourceRecordUS,ParameterValue="$ALB_RR_REGION_US" \
+            ParameterKey=ResourceRecordBR,ParameterValue="$ALB_RR_REGION_BR"
 
+```
+
+```
+clear; i=0; while [ $i -lt 20 ]; do echo $i; i=$((i+1)); \
+ curl -fsSL http://weighted.$HOSTED_ZONE_NAME \
+ | sed -e 's/<[^>]\_>//g' >> fc-m03-d03-r53-weighted.log; done; sort fc-m03-d03-r53-weighted.log | uniq -c
+```
+
+```
+clear; i=0; while [ $i -lt 20 ]; do echo $i; i=$((i+1)); \
+ curl -fsSL http://geo.$HOSTED_ZONE_NAME \
+ | sed -e 's/<[^>]\_>//g' >> fc-m03-d03-r53-geo.log; done; sort fc-m03-d03-r53-geo.log | uniq -c
 ```
 
 ```
