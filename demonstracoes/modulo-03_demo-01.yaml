@@ -1,0 +1,576 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: IaC para provisionamento de estrutura de ambiente de demonstracao
+
+Parameters:
+  AvailabilityZones:
+    Description: Zonas de disponibilidade
+    Type: String
+    Default: "us-east-1a,us-east-1b"
+
+  VpcCidr:
+    Description: CIDR para esta VPC
+    Type: String
+    Default: 10.0.0.0/16
+
+  SubnetCidrPublic:
+    Description: CIDR para a subnet desta  VPC
+    Type: String
+    Default: "10.0.1.0/24,10.0.2.0/24"
+
+  SubnetCidrPrivate:
+    Description: CIDR para a subnet desta  VPC
+    Type: String
+    Default: "10.0.3.0/24,10.0.4.0/24"
+
+  AMI:
+    Description: AMI ID
+    Type: String
+    Default: ami-084568db4383264d4
+
+  InstanceType:
+    Description: EC2 Instance  Type
+    Type: String
+    Default: t2.micro
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: "true"
+      EnableDnsSupport: "true"
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-vpc"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  SubnetPublicOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !Split [",", !Ref AvailabilityZones]]
+      CidrBlock: !Select [0, !Split [",", !Ref SubnetCidrPublic]]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ""
+            - - !Ref AWS::StackName
+              - "-public-subnet-"
+              - !Select [0, !Split [",", !Ref AvailabilityZones]]
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  SubnetPublicTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !Split [",", !Ref AvailabilityZones]]
+      CidrBlock: !Select [1, !Split [",", !Ref SubnetCidrPublic]]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ""
+            - - !Ref AWS::StackName
+              - "-public-subnet-"
+              - !Select [1, !Split [",", !Ref AvailabilityZones]]
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  SubnetPrivateOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !Split [",", !Ref AvailabilityZones]]
+      CidrBlock: !Select [0, !Split [",", !Ref SubnetCidrPrivate]]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ""
+            - - !Ref AWS::StackName
+              - "-private-subnet-"
+              - !Select [0, !Split [",", !Ref AvailabilityZones]]
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  SubnetPrivateTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !Split [",", !Ref AvailabilityZones]]
+      CidrBlock: !Select [1, !Split [",", !Ref SubnetCidrPrivate]]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ""
+            - - !Ref AWS::StackName
+              - "-private-subnet-"
+              - !Select [1, !Split [",", !Ref AvailabilityZones]]
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-igw"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  NatGatewayEIPOne:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGatewayOne:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIPOne.AllocationId
+      SubnetId: !Ref SubnetPublicOne
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nat-one-gw"
+
+  NatGatewayEIPTwo:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGatewayTwo:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIPTwo.AllocationId
+      SubnetId: !Ref SubnetPublicTwo
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nat-two-gw"
+
+  RouteTablePublicOne:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public-one-rt"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  RoutePublicOne:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTablePublicOne
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociationPublicOne:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetPublicOne
+      RouteTableId: !Ref RouteTablePublicOne
+
+  RouteTablePublicTwo:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public-two-rt"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  RoutePublicTwo:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTablePublicTwo
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociationPublicTwo:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetPublicTwo
+      RouteTableId: !Ref RouteTablePublicTwo
+
+  RouteTablePrivateOne:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-one-rt"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  RoutePrivateOne:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTablePrivateOne
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGatewayOne
+
+  SubnetRouteTableAssociationPrivateOne:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetPrivateOne
+      RouteTableId: !Ref RouteTablePrivateOne
+
+  RouteTablePrivateTwo:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-two-rt"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  RoutePrivateTwo:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTablePrivateTwo
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGatewayTwo
+
+  SubnetRouteTableAssociationPrivateTwo:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetPrivateTwo
+      RouteTableId: !Ref RouteTablePrivateTwo
+
+  Role:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-instance-profile-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: ["ec2.amazonaws.com"]
+            Action: "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${AWS::StackName}-instance-profile"
+      Roles:
+        - !Ref Role
+
+  SecurityGroupNode01:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AWS::StackName}-node01-sg"
+      GroupDescription: Allow http to client host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: HTTP
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+
+  InstanceNode01:
+    Type: "AWS::EC2::Instance"
+    DependsOn:
+      - InternetGateway
+      - NatGatewayOne
+      - RoutePublicOne
+      - RoutePrivateOne
+    Properties:
+      ImageId: !Ref AMI
+      InstanceType:
+        Ref: InstanceType
+      SubnetId: !Ref SubnetPrivateOne
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds:
+        - Ref: SecurityGroupNode01
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+
+          TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"`
+          EC2_REGION=`curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone | sed 's/[a-z]$//'`
+          EC2_INSTANCE_ID=`curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id`
+          EC2_INSTANCE_TYPE=`curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type`
+
+          cat <<EOF > /root/node-install.sh
+          #!/bin/bash
+
+          #Hostname
+          echo "REALIZANDO A CONFIGURACAO DO HOSTNAME"
+          NODE_HOSTNAME="node01"
+          echo "\$NODE_HOSTNAME" > /etc/hostname
+          echo "127.0.0.1 localhost" >> /etc/hosts
+          hostnamectl set-hostname "\$NODE_HOSTNAME"
+
+          apt update
+          apt install apache2 -y
+          systemctl start apache2
+          systemctl enable apache2
+          systemctl status apache2
+
+          ufw allow 80/tcp
+
+          echo "<h1>\$NODE_HOSTNAME - $EC2_REGION - $EC2_INSTANCE_ID, $EC2_INSTANCE_TYPE</h1>" > /var/www/html/index.html
+
+          echo "
+          <VirtualHost *:80>
+              ServerAdmin webmaster@localhost
+              DocumentRoot /var/www/html
+
+              Alias /users /var/www/html
+
+              ErrorLog ${APACHE_LOG_DIR}/error.log
+              CustomLog ${APACHE_LOG_DIR}/access.log combined
+          </VirtualHost>
+          " > /etc/apache2/sites-available/000-default.conf
+
+          systemctl restart apache2
+          systemctl status apache2
+
+          EOF
+
+          chmod +x /root/node-install.sh
+          nohup /root/node-install.sh > /var/log/node-install.log 2>&1 &
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-node01"
+
+  SecurityGroupNode02:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AWS::StackName}-node02-sg"
+      GroupDescription: Allow http to client host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: HTTP
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+
+  InstanceNode02:
+    Type: "AWS::EC2::Instance"
+    DependsOn:
+      - InternetGateway
+      - NatGatewayTwo
+      - RoutePublicTwo
+      - RoutePrivateTwo
+    Properties:
+      ImageId: !Ref AMI
+      InstanceType:
+        Ref: InstanceType
+      SubnetId: !Ref SubnetPrivateTwo
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds:
+        - Ref: SecurityGroupNode02
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+
+          TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"`
+          EC2_REGION=`curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone | sed 's/[a-z]$//'`
+          EC2_INSTANCE_ID=`curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id`
+          EC2_INSTANCE_TYPE=`curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type`
+
+          cat <<EOF > /root/node-install.sh
+          #!/bin/bash
+
+          #Hostname
+          echo "REALIZANDO A CONFIGURACAO DO HOSTNAME"
+          NODE_HOSTNAME="node02"
+          echo "\$NODE_HOSTNAME" > /etc/hostname
+          echo "127.0.0.1 localhost" >> /etc/hosts
+          hostnamectl set-hostname "\$NODE_HOSTNAME"
+
+          apt update
+          apt install apache2 -y
+          systemctl start apache2
+          systemctl enable apache2
+
+          ufw allow 80/tcp
+
+          echo "<h1>\$NODE_HOSTNAME - $EC2_REGION - $EC2_INSTANCE_ID, $EC2_INSTANCE_TYPE</h1>" > /var/www/html/index.html
+
+          echo "
+          <VirtualHost *:80>
+              ServerAdmin webmaster@localhost
+              DocumentRoot /var/www/html
+
+              Alias /users /var/www/html
+
+              ErrorLog ${APACHE_LOG_DIR}/error.log
+              CustomLog ${APACHE_LOG_DIR}/access.log combined
+          </VirtualHost>
+          " > /etc/apache2/sites-available/000-default.conf
+
+          systemctl restart apache2
+          systemctl status apache2
+
+          EOF
+
+          chmod +x /root/node-install.sh
+          nohup /root/node-install.sh > /var/log/node-install.log 2>&1 &
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-node02"
+
+  TagetGroupNodes:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${AWS::StackName}-all-nodes-tg"
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      HealthCheckPath: /
+      VpcId: !Ref VPC
+      TargetType: instance
+      Targets:
+        - Id: !Ref InstanceNode01
+        - Id: !Ref InstanceNode02
+
+  TagetGroupNode01:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${AWS::StackName}-node01-tg"
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      HealthCheckPath: /
+      VpcId: !Ref VPC
+      TargetType: instance
+      Targets:
+        - Id: !Ref InstanceNode01
+
+  TagetGroupNode02:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${AWS::StackName}-node02-tg"
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      HealthCheckPath: /
+      VpcId: !Ref VPC
+      TargetType: instance
+      Targets:
+        - Id: !Ref InstanceNode02
+
+  SecurityGroupALBRoundRobin:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AWS::StackName}-alb-rr-sg"
+      GroupDescription: Allow http to client host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !GetAtt VPC.CidrBlock
+
+  ALBRoundRobin:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Name: !Sub "${AWS::StackName}-alb-rr-if"
+      Scheme: internet-facing
+      Subnets:
+        - !Ref SubnetPublicOne
+        - !Ref SubnetPublicTwo
+      SecurityGroups:
+        - !Ref SecurityGroupALBRoundRobin
+
+  ALBRoundRobinHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TagetGroupNodes
+      LoadBalancerArn: !Ref ALBRoundRobin
+      Port: 80
+      Protocol: HTTP
+
+  SecurityGroupALBRoundRobinWeighed:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AWS::StackName}-alb-rr-wtd-sg"
+      GroupDescription: Allow http to client host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !GetAtt VPC.CidrBlock
+
+  ALBRoundRobinWeighed:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Name: !Sub "${AWS::StackName}-alb-rr-wtd-if"
+      Scheme: internet-facing
+      Subnets:
+        - !Ref SubnetPublicOne
+        - !Ref SubnetPublicTwo
+      SecurityGroups:
+        - !Ref SecurityGroupALBRoundRobinWeighed
+
+  ALBRoundRobinWeighedHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref TagetGroupNode01
+                Weight: 80
+              - TargetGroupArn: !Ref TagetGroupNode02
+                Weight: 20
+      LoadBalancerArn: !Ref ALBRoundRobinWeighed
+      Port: 80
+      Protocol: HTTP

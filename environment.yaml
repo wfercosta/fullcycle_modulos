@@ -1,0 +1,511 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: IaC para provisionamento de estrutura de ambiente de testes
+
+Parameters:
+  Prefix:
+    Description: Prefixos de recursos
+    Type: String
+    Default: fullcycle-lab
+
+  VpcCidr:
+    Description: CIDR para esta VPC
+    Type: String
+    Default: 10.0.0.0/16
+
+  SubnetCidrPublic:
+    Description: CIDR para a subnet desta  VPC
+    Type: String
+    Default: 10.0.1.0/24
+
+  SubnetCidrPrivate:
+    Description: CIDR para a subnet desta  VPC
+    Type: String
+    Default: 10.0.2.0/24
+
+  AvailabilityZone:
+    Description: Availability Zone
+    Type: AWS::EC2::AvailabilityZone::Name
+    Default: us-east-1a
+
+  AMI:
+    Description: AMI ID
+    Type: String
+    Default: ami-0967e5535761d839e
+
+  InstanceType:
+    Description: EC2 Instance  Type
+    Type: String
+    Default: t4g.small
+    #Default: t4g.medium
+
+  isCreateDataPlaneNode:
+    Type: String
+    Default: true
+
+Conditions:
+  isCreateDataPlaneNode: !Equals [!Ref isCreateDataPlaneNode, true]
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: "true"
+      EnableDnsSupport: "true"
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub "${Prefix}-vpc"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  SubnetPublic:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AvailabilityZone
+      CidrBlock: !Ref SubnetCidrPublic
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ""
+            - - !Ref Prefix
+              - "-public-subnet-"
+              - !Ref AvailabilityZone
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  SubnetPrivate:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AvailabilityZone
+      CidrBlock: !Ref SubnetCidrPrivate
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ""
+            - - !Ref Prefix
+              - "-private-subnet-"
+              - !Ref AvailabilityZone
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${Prefix}-igw"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref SubnetPublic
+      Tags:
+        - Key: Name
+          Value: !Sub "${Prefix}-nat-gw"
+
+  RouteTablePublic:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${Prefix}-public-rt"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  RoutePublic:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTablePublic
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociationPublic:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetPublic
+      RouteTableId: !Ref RouteTablePublic
+
+  RouteTablePrivate:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${Prefix}-private-rt"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  RoutePrivate:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTablePrivate
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  SubnetRouteTableAssociationPrivate:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetPrivate
+      RouteTableId: !Ref RouteTablePrivate
+
+  Role:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${Prefix}-instance-profile-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: ["ec2.amazonaws.com"]
+            Action: "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${Prefix}-instance-profile"
+      Roles:
+        - !Ref Role
+
+  SecurityGroupControlplane:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${Prefix}-controlplane-sg"
+      GroupDescription: Allow http to client host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: HTTPS
+        - IpProtocol: tcp
+          FromPort: 6443
+          ToPort: 6443
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: Kubernetes API Server
+        - IpProtocol: tcp
+          FromPort: 2379
+          ToPort: 2380
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: etcd server client API
+        - IpProtocol: tcp
+          FromPort: 10250
+          ToPort: 10250
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: Kubelet API
+        - IpProtocol: tcp
+          FromPort: 10259
+          ToPort: 10259
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: kube-scheduler
+        - IpProtocol: tcp
+          FromPort: 10257
+          ToPort: 10257
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: kube-controller-manager
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+
+  InstanceControlplane:
+    Type: "AWS::EC2::Instance"
+    DependsOn:
+      - InternetGateway
+      - NatGateway
+      - RoutePublic
+      - RoutePrivate
+    Properties:
+      ImageId: !Ref AMI
+      InstanceType:
+        Ref: InstanceType
+      SubnetId: !Ref SubnetPrivate
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds:
+        - Ref: SecurityGroupControlplane
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+
+          cat <<EOF > /root/node-install.sh
+          #!/bin/bash
+
+          #Hostname
+          echo "REALIZANDO A CONFIGURACAO DO HOSTNAME"
+          NODE_HOSTNAME="controlplane"
+          echo "\$NODE_HOSTNAME" > /etc/hostname
+          hostnamectl set-hostname "\$NODE_HOSTNAME"
+
+          echo "127.0.0.1   localhost" > /etc/hosts
+          echo "127.0.1.1   \$NODE_HOSTNAME" >> /etc/hosts
+
+          systemctl restart systemd-hostnamed
+
+          echo "REALIZANDO A INSTALACAO DO CLUSTER"
+          #Containerd
+          curl -fsSLO https://github.com/containerd/containerd/releases/download/v2.0.4/containerd-2.0.4-linux-arm64.tar.gz 2>/var/log/ec2_user_data.log
+          tar Cxzvf /usr/local containerd-2.0.4-linux-arm64.tar.gz
+
+          curl -fsSL https://raw.githubusercontent.com/containerd/containerd/main/containerd.service \
+            -o /etc/systemd/system/containerd.service
+
+          systemctl daemon-reload
+          systemctl enable --now containerd
+
+          #runc
+          curl -fsSLO https://github.com/opencontainers/runc/releases/download/v1.2.6/runc.arm64
+          install -m 755 runc.arm64 /usr/local/sbin/runc
+
+          #cni puglins
+          curl -fsSLO https://github.com/containernetworking/plugins/releases/download/v1.6.2/cni-plugins-linux-arm-v1.6.2.tgz
+          mkdir -p /opt/cni/bin
+          tar Cxzvf /opt/cni/bin cni-plugins-linux-arm-v1.6.2.tgz
+
+          #Containerd configuracao
+          mkdir -p /etc/containerd
+          containerd config default > /etc/containerd/config.toml
+          systemctl restart containerd
+
+          #kubeadm, kubelet, kubectl
+          apt-get update
+          apt-get install -y apt-transport-https ca-certificates curl gpg
+
+          curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+          echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' \
+            | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+          apt-get update
+          apt-get install -y kubelet kubeadm kubectl
+          apt-mark hold kubelet kubeadm kubectl
+
+          systemctl enable --now kubelet
+
+          #Cluster - Controlplane
+          echo 1 > /proc/sys/net/ipv4/ip_forward
+
+          kubeadm init \
+            --apiserver-advertise-address \$(curl http://169.254.169.254/latest/meta-data/local-ipv4) \
+            --pod-network-cidr 192.168.0.0/16
+
+          #Kubectl config
+          mkdir -p /root/.kube
+          cp -i /etc/kubernetes/admin.conf /root/.kube/config
+          chown root:root /root/.kube/config
+          export KUBECONFIG=/root/.kube/config
+
+          apt-get install -y bash-completion
+          echo "source /usr/share/bash-completion/bash_completion" >>/root/.bashrc
+          echo "source <(kubectl completion bash)" >>/root/.bashrc
+          echo "alias k=kubectl" >>/root/.bashrc
+          echo "complete -o default -F __start_kubectl k" >>/root/.bashrc
+
+          echo "INSTALACAO INICIAL DO CLUSTER FINALIZADA."
+
+          #Aguadando readiness controlplane
+          TIMEOUT=600
+          INTERVAL=5
+
+          elapsed=0
+
+          while [[ \$elapsed -lt \$TIMEOUT ]]; do
+            if kubectl get pods --request-timeout=5s --output=json > /dev/null 2>&1; then
+              echo "K8S API SERVER INICIALIZADO. ELAPSED: \$elapsed"
+              break
+            else
+              echo "AGUARDANDO INCIALIZACAO DO K8S API SERVER. INTERVAL: \$INTERVAL. ELAPSED: \$elapsed."
+              sleep \$INTERVAL
+              elapsed=\$((elapsed + INTERVAL))
+            fi
+          done
+
+          if [[ "\$elapsed" -ge "\$TIMEOUT" ]]; then
+            echo "TERMINO DO TEMPO DE ESPERA INICIALIZACAO K8S API SERVER. PARANDO EXECUCAO SCRIPT"
+            exit 1
+          fi
+
+          echo "APLICANDO CONFIGURACOES POS INSTALACAO CLUSTERS."
+
+          echo "CONFIGURANDO POD NETWORK COM CALICO"
+
+          #Pod Network - Calico
+          kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/tigera-operator.yaml
+          kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/custom-resources.yaml
+
+          echo "INSTALANDO  HELM"
+
+          curl https://baltocdn.com/helm/signing.asc | gpg --dearmor | sudo tee /usr/share/keyrings/helm.gpg > /dev/null
+          apt-get install apt-transport-https --yes
+          echo "deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" \
+            | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list
+          apt-get update
+          apt-get install helm
+
+          echo "APLICANDO CONFIGURACÓES KONG INGRESS CONTROLLER E GATEWAY"
+
+          echo"
+          proxy:
+            type: NodePort
+            http:
+              nodePort: 32080
+          " > /root/helm-kong-values.yaml
+
+          helm repo add kong https://charts.konghq.com
+          helm repo update
+          helm install kong kong/kong -n kong --create-namespace --values /root/helm-kong-values.yaml
+
+          echo "SCRIPT DE INSTALACAO FINALIZADO"
+          EOF
+
+          chmod +x /root/node-install.sh
+          nohup /root/node-install.sh > /var/log/node-install.log 2>&1 &
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Prefix}-k8s-controlplane"
+
+  SecurityGroupDataplane:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${Prefix}-dataplane-sg"
+      GroupDescription: Allow http to client host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: HTTPS
+        - IpProtocol: tcp
+          FromPort: 10250
+          ToPort: 10250
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: Kubelet API
+        - IpProtocol: tcp
+          FromPort: 10256
+          ToPort: 10256
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: Kube-proxy
+        - IpProtocol: tcp
+          FromPort: 30000
+          ToPort: 32767
+          CidrIp: !GetAtt VPC.CidrBlock
+          Description: NodePort Services
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+
+  InstanceDataplane:
+    Type: "AWS::EC2::Instance"
+    Condition: isCreateDataPlaneNode
+    DependsOn:
+      - InstanceControlplane
+    Properties:
+      ImageId: !Ref AMI
+      InstanceType:
+        Ref: InstanceType
+      SubnetId: !Ref SubnetPrivate
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds:
+        - Ref: SecurityGroupDataplane
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+
+          cat <<EOF > /root/node-install.sh
+          #!/bin/bash
+
+          #Hostname
+          echo "REALIZANDO A CONFIGURACAO DO HOSTNAME"
+          NODE_HOSTNAME="dataplane"
+          echo "\$NODE_HOSTNAME" > /etc/hostname
+          hostnamectl set-hostname "\$NODE_HOSTNAME"
+
+          echo "127.0.0.1   localhost" > /etc/hosts
+          echo "127.0.1.1   \$NODE_HOSTNAME" >> /etc/hosts
+
+          systemctl restart systemd-hostnamed
+
+          echo "REALIZANDO A INSTALACAO DO CLUSTER"
+          #Containerd
+          curl -fsSLO https://github.com/containerd/containerd/releases/download/v2.0.4/containerd-2.0.4-linux-arm64.tar.gz 2>/var/log/ec2_user_data.log
+          tar Cxzvf /usr/local containerd-2.0.4-linux-arm64.tar.gz
+
+          curl -fsSL https://raw.githubusercontent.com/containerd/containerd/main/containerd.service \
+            -o /etc/systemd/system/containerd.service
+
+          systemctl daemon-reload
+          systemctl enable --now containerd
+
+          #runc
+          curl -fsSLO https://github.com/opencontainers/runc/releases/download/v1.2.6/runc.arm64
+          install -m 755 runc.arm64 /usr/local/sbin/runc
+
+          #cni puglins
+          curl -fsSLO https://github.com/containernetworking/plugins/releases/download/v1.6.2/cni-plugins-linux-arm-v1.6.2.tgz
+          mkdir -p /opt/cni/bin
+          tar Cxzvf /opt/cni/bin cni-plugins-linux-arm-v1.6.2.tgz
+
+          #Containerd configuracao
+          mkdir -p /etc/containerd
+          containerd config default > /etc/containerd/config.toml
+          systemctl restart containerd
+
+          #kubeadm, kubelet, kubectl
+          apt-get update
+          apt-get install -y apt-transport-https ca-certificates curl gpg
+
+          curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+          echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' \
+            | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+          apt-get update
+          apt-get install -y kubelet kubeadm kubectl
+          apt-mark hold kubelet kubeadm kubectl
+
+          systemctl enable --now kubelet
+
+          #Cluster - Controlplane
+          echo 1 > /proc/sys/net/ipv4/ip_forward
+
+          echo "SCRIPT DE INSTALACAO FINALIZADO"
+          EOF
+
+          chmod +x /root/node-install.sh
+          nohup /root/node-install.sh > /var/log/node-install.log 2>&1 &
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Prefix}-k8s-dataplane"
