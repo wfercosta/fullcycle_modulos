@@ -121,13 +121,13 @@ aws --region us-east-1 \
 ```
 clear; i=0; while [ $i -lt 20 ]; do echo $i; i=$((i+1)); \
  curl -fsSL http://weighted.$HOSTED_ZONE_NAME \
- | sed -e 's/<[^>]\_>//g' >> fc-m03-d03-r53-weighted.log; done; sort fc-m03-d03-r53-weighted.log | uniq -c
+ | sed -e 's/<[^>]*>//g' >> fc-m03-d03-r53-weighted.log; done; sort fc-m03-d03-r53-weighted.log | uniq -c
 ```
 
 ```
 clear; i=0; while [ $i -lt 20 ]; do echo $i; i=$((i+1)); \
  curl -fsSL http://geo.$HOSTED_ZONE_NAME \
- | sed -e 's/<[^>]\_>//g' >> fc-m03-d03-r53-geo.log; done; sort fc-m03-d03-r53-geo.log | uniq -c
+ | sed -e 's/<[^>]*>//g' >> fc-m03-d03-r53-geo.log; done; sort fc-m03-d03-r53-geo.log | uniq -c
 ```
 
 ```
