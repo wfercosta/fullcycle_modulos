@@ -1,0 +1,329 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: IaC para provisionamento de estrutura de ambiente de demonstracao
+
+Parameters:
+  AvailabilityZones:
+    Description: Zonas de disponibilidade
+    Type: CommaDelimitedList
+    Default: us-east-1a, us-east-1b
+
+  VpcCidr:
+    Description: CIDR para esta VPC
+    Type: String
+    Default: 10.0.0.0/16
+
+  SubnetCidrPublic:
+    Description: CIDR para a subnet desta  VPC
+    Type: CommaDelimitedList
+    Default: 10.0.1.0/24, 10.0.2.0/24
+
+  SubnetCidrPrivate:
+    Description: CIDR para a subnet desta  VPC
+    Type: CommaDelimitedList
+    Default: 10.0.3.0/24, 10.0.4.0/24
+
+  DesiredCapacity:
+    Type: Number
+    Description: Numero de data planes
+    Default: 2
+    MinValue: 1
+    MaxValue: 3
+
+  NodeInstanceType:
+    Type: String
+    Description: EC2 instance type para os data planes
+    Default: t3.medium
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: "true"
+      EnableDnsSupport: "true"
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-vpc"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  SubnetPublicOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      CidrBlock: !Select [0, !Ref SubnetCidrPublic]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ""
+            - - !Ref AWS::StackName
+              - "-public-subnet-"
+              - !Select [0, !Ref AvailabilityZones]
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+        - Key: kubernetes.io/role/elb
+          Value: 1
+
+  SubnetPublicTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      CidrBlock: !Select [1, !Ref SubnetCidrPublic]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ""
+            - - !Ref AWS::StackName
+              - "-public-subnet-"
+              - !Select [1, !Ref AvailabilityZones]
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+        - Key: kubernetes.io/role/elb
+          Value: 1
+
+  SubnetPrivateOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !Ref AvailabilityZones]
+      CidrBlock: !Select [0, !Ref SubnetCidrPrivate]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ""
+            - - !Ref AWS::StackName
+              - "-private-subnet-"
+              - !Select [0, !Ref AvailabilityZones]
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+        - Key: kubernetes.io/role/internal-elb
+          Value: 1
+
+  SubnetPrivateTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !Ref AvailabilityZones]
+      CidrBlock: !Select [1, !Ref SubnetCidrPrivate]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ""
+            - - !Ref AWS::StackName
+              - "-private-subnet-"
+              - !Select [1, !Ref AvailabilityZones]
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+        - Key: kubernetes.io/role/internal-elb
+          Value: 1
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-igw"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  NatGatewayEIPOne:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGatewayOne:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIPOne.AllocationId
+      SubnetId: !Ref SubnetPublicOne
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nat-one-gw"
+
+  NatGatewayEIPTwo:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGatewayTwo:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIPTwo.AllocationId
+      SubnetId: !Ref SubnetPublicTwo
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nat-two-gw"
+
+  RouteTablePublicOne:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public-one-rt"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  RoutePublicOne:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTablePublicOne
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociationPublicOne:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetPublicOne
+      RouteTableId: !Ref RouteTablePublicOne
+
+  RouteTablePublicTwo:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public-two-rt"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  RoutePublicTwo:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTablePublicTwo
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociationPublicTwo:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetPublicTwo
+      RouteTableId: !Ref RouteTablePublicTwo
+
+  RouteTablePrivateOne:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-one-rt"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  RoutePrivateOne:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTablePrivateOne
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGatewayOne
+
+  SubnetRouteTableAssociationPrivateOne:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetPrivateOne
+      RouteTableId: !Ref RouteTablePrivateOne
+
+  RouteTablePrivateTwo:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-two-rt"
+        - Key: Application
+          Value: !Ref "AWS::StackName"
+
+  RoutePrivateTwo:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTablePrivateTwo
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGatewayTwo
+
+  SubnetRouteTableAssociationPrivateTwo:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      SubnetId: !Ref SubnetPrivateTwo
+      RouteTableId: !Ref RouteTablePrivateTwo
+
+  RoleEKSCluster:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-eks-cluster-role"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+        - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
+        - arn:aws:iam::aws:policy/AmazonEKSVPCResourceController
+
+  SecurityGroupEKS:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${AWS::StackName}-eks-cluster-sg"
+      GroupDescription: "EKS Security Group"
+      VpcId: !Ref VPC
+
+  Cluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Sub "fc-mod04-eks-cluster"
+      RoleArn: !GetAtt RoleEKSCluster.Arn
+      ResourcesVpcConfig:
+        SecurityGroupIds:
+          - !Ref SecurityGroupEKS
+        SubnetIds:
+          - !Ref SubnetPrivateOne
+          - !Ref SubnetPrivateTwo
+
+  RoleNodeInstance:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-eks-node-instance-role"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+
+  NodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn:
+      - Cluster
+    Properties:
+      ClusterName: fc-mod04-eks-cluster
+      NodegroupName: fc-mod04-eks-cluster-node-group
+      NodeRole: !GetAtt RoleNodeInstance.Arn
+      Subnets:
+        - !Ref SubnetPrivateOne
+        - !Ref SubnetPrivateTwo
+      ScalingConfig:
+        DesiredSize: !Ref DesiredCapacity
+        MinSize: 1
+        MaxSize: 2
+      InstanceTypes:
+        - !Ref NodeInstanceType
