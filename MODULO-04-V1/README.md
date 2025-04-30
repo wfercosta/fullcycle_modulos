@@ -49,11 +49,13 @@ helm repo update
 helm install kong kong/kong --namespace kong --create-namespace \
   --set proxy.type=LoadBalancer \
   --set proxy.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-type"="nlb" \
-  --set proxy.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-scheme"="internet-facing"
+  --set proxy.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-scheme"="internet-facing" \
+  --set proxy.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-name"="fc-mod04-eks-cluster-nlb-if"
 ```
 
 Por final, vamos fazer o cleanup do nosso ambiente e remover todos os recursos:
 
 ```
+helm uninstall kong  -n kong
 aws --region us-east-1 cloudformation delete-stack --stack-name fc-mod04-eks-cluster
 ```
