@@ -16,7 +16,7 @@ Como as demonstrações são com base no uso de recursos criados a partir dos se
 
 #### PRÉ-REQUISITOS
 
-Caso você queira executar estas demonstrações no seu ambiente você precisará ter:
+Caso você queira executar estas demonstrações no seu ambiente usando esta opção você precisará ter:
 
 - Conta na Amazon Web Services (AWS);
 - Credenciais de acesso a AWS, com permissões suficientes para:
@@ -25,8 +25,8 @@ Caso você queira executar estas demonstrações no seu ambiente você precisar�
   - Administrar manutenção de instâncias EC2, Load Balancers e Security Groups;
   - Administrar manutenção de clusters EKS;
 
-- [AWS CLI](https://docs.aws.amazon.com/pt_br/streams/latest/dev/setup-awscli.html) devidamente configurado com as credenciais de acesso;
-- [KUBECTL](https://kubernetes.io/docs/reference/kubectl/) devidamente configurado;
+- [AWS CLI](https://docs.aws.amazon.com/pt_br/streams/latest/dev/setup-awscli.html) devidamente instalado e configurado;
+- [KUBECTL](https://kubernetes.io/docs/reference/kubectl/) devidamente instalado;
 - [HELM](https://helm.sh/docs/intro/install/) devidamente instalado;
 
 #### EXECUÇÃO
@@ -46,7 +46,7 @@ Uma vez finalizado o provisionamento, podemos atualizar o nosso `kubeconfig` com
 aws eks update-kubeconfig --name fc-mod04-eks-cluster
 ```
 
-Para validar o provisionamento do cluster, podemos tentar executar um comando para recuperar as informações dos nós que fazem parte do cluster:
+Para validar o provisionamento do cluster, podemos tentar executar um comando para recuperar as informações dos nós que fazem parte dele:
 
 ```
 kubectl get nodes
@@ -103,7 +103,7 @@ Primeiramente precisamos desinstalar o **Kong Ingress Controller**, onde uma vez
 helm uninstall kong -n kong
 ```
 
-Uma vez que o _Load Balancer_ não estiver mais presente, podemos realizar o remoção do restante da stack:
+Uma vez que o _Load Balancer_ não estiver mais presente, podemos realizar o remoção do restante da _stack_:
 
 ```
 aws --region us-east-1 cloudformation delete-stack --stack-name fc-mod04-eks-cluster
@@ -113,11 +113,86 @@ aws --region us-east-1 cloudformation delete-stack --stack-name fc-mod04-eks-clu
 
 #### PRÉ-REQUISITOS
 
-https://www.keycloak.org/getting-started/getting-started-kube
+Caso você queira executar estas demonstrações no seu ambiente usando esta opção você precisará ter:
 
-kind create cluster --name=fc-k8s --config=./kind-config.yaml
+- Possui um container runtime instalado como `docker` ou `podman`;
+- [KIND](https://kind.sigs.k8s.io/docs/user/quick-start/) devidamente instalado;
+- [KUBECTL](https://kubernetes.io/docs/reference/kubectl/) devidamente instalado;
+- [HELM](https://helm.sh/docs/intro/install/) devidamente instalado;
 
 #### EXECUÇÃO
+
+Como primeiro passo, iremos criar o nosso cluster para testes locais usando o ``kind`, onde para este ambiente iremos provisionar um nó de _controlplane_ e outro de _dataplane_ (_worker_). Note que nesta configuração estamos adiconando uma configuração de _extraPortMappings_ que vai ser importante para realizarmos um _port forward_ a partir da porta local **80** para **31000** que irá nos dar acesso ao **Kong**:
+
+```
+cat << EOF | kind create cluster --name=fc-k8s --config -
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  disableDefaultCNI: false
+nodes:
+  - role: control-plane
+  - role: worker
+    extraPortMappings:
+      - containerPort: 31000
+        hostPort: 80
+        protocol: TCP
+EOF
+```
+
+Ao término da configuração do cluster local, provavelmente já estará confiugrando no seu `kubectl` como ambiente atual.
+Para validar o provisionamento do cluster, podemos tentar executar um comando para recuperar as informações dos nós que fazem parte dele:
+
+```
+kubectl get nodes
+```
+
+Agora que temos o cluster configurando, a através do cli do `helm` iremos configurar o **kong ingress controller**, para tanto primeiro vamos configurar o repositório do kong:
+
+```
+helm repo add kong https://charts.konghq.com
+helm repo update
+```
+
+Em seguida, vamos instala-lo no nosso cluster. Note que diferente da opção de instalação em ambiente cloud, alteramos a configuração para instala-lo com exposição via `NodePort`:
+
+```
+helm install kong kong/kong --namespace kong --create-namespace \
+  --set proxy.type=NodePort
+```
+
+Como configuramos o nosso `kind` com um _port forward_ --> **80:31000**, precisamos ajustar a configuração do serviço que foi criado no passo anterior, alterando o `NodePort` randomico para seja de acordo com a configuração do `kind`:
+
+```
+export KONG_GATEWAY_NODE_PORT_CURRENT=$(kubectl -n kong get svc kong-kong-proxy \
+    -ojsonpath='{.spec.ports[?(@.name=="kong-proxy")].nodePort}')
+
+kubectl -n kong get svc kong-kong-proxy -o yaml \
+    | sed "s/nodePort: $KONG_GATEWAY_NODE_PORT_CURRENT/nodePort: 31000/g" \
+    | kubectl replace -f -
+```
+
+Para conferir, basta validarmos a alteração que foi realizado no serviço:
+
+```
+kubectl -n kong get svc kong-kong-proxy -o wide
+```
+
+Por ultimo, vamos exportar uma variável para DNS do `kong` para `localhost`:
+
+```
+export KONG_GATEWAY_DNS=localhost
+```
+
+#### PÓS DEMONSTRAÇÃO E CLEANUP
+
+Após o término desta demonstração, para desprovisionar os recursos por ser ambiente local basta removermos o nosso cluster no `kind`:
+
+```
+kind delete clusters fc-k8s
+```
+
+## DEMONSTRAÇÃO
 
 Como primeiro passo, começamos realizando o provisionamento da infraestrutura inicial:
 
@@ -134,8 +209,9 @@ curl -fsSL "http://$KONG_GATEWAY_DNS/api/anything?param1=example"
 kubectl apply -f https://reweave.azurewebsites.net/k8s/v1.29/net.yaml
 
 
-helm install kong kong/kong --namespace kong --create-namespace \
-  --set proxy.type=NodePort
+https://www.keycloak.org/getting-started/getting-started-kube
+
+
 
 cat << EOF | kubectl apply  -f -
 apiVersion: apps/v1
