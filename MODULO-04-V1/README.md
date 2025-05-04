@@ -233,7 +233,7 @@ curl -fsSL "http://$KONG_GATEWAY_DNS/api/anything?param1=example"
 
 ```
 
-### EXPOSIÇÃO DE API PARA SIMULAÇÃO
+### IMPLANTAÇÃO DE IDENTITY PROVIDER (IdP) E CRIAÇÃO DE CREDENCIAIS DE APLICAÇÃO COM SCOPES
 
 #### EXECUÇÃO
 
