@@ -194,19 +194,52 @@ kind delete clusters fc-k8s
 
 ## DEMONSTRAÇÃO
 
-Como primeiro passo, começamos realizando o provisionamento da infraestrutura inicial:
+### EXPOSIÇÃO DE API PARA SIMULAÇÃO
+
+A primeira ação que vamos realizar nesta demonstração será o provisionamento de uma aplicação que irá fazer o papel de API. Para tanto, iremos provisionar um container chamado de [HTTPBIN](https://httpbin.org) que é um serviço de HTTP simples usado para testes.
+
+#### EXECUÇÃO
+
+Primeiramente, vamos criar um _deployment_ no nosso cluster kubernetes usando a imagem `kennethreitz/httpbin` que pode ser encontrada no **docker hub**:
+
+```
+kubectl create deploy httpbin --image=kennethreitz/httpbin --port=80 --replicas=1
+```
+
+Na sequëncia vamos criar um _service_ do tipo `ClusterIP` nosso _deployment_:
+
+```
+kubectl expose deploy httpbin --port=80 --name=httpbin
+```
+
+Uma vez gerado o _service_, iremos expor o nosso serviço através do _ingress controller_ do **kong**, criando um rota `/api/*`:
+
+```
+kubectl create ingress httpbin --class=kong \
+    --rule="/api/*=httpbin:80" \
+    --annotation=konghq.com/strip-path=true
+```
+
+Através do comando a seguir conseguirmos ter uma visão dos recursos criados e validar se estão todos executando:
+
+```
+kubectl get po,deploy,svc
+```
+
+Para um teste de sanidade, iremos chamar o endpoint `/anything` do container que acabamos de implantar e verificar se estamos tendo uma resposta via **Kong Ingress Controller/ Gateway**:
+
+```
+curl -fsSL "http://$KONG_GATEWAY_DNS/api/anything?param1=example"
 
 ```
 
-kubectl run httpbin --image=kennethreitz/httpbin --port=80
-kubectl expose  pod httpbin --port=80 --name=httpbin
-kubectl create ingress httpbin --class=kong --rule="/api/*=httpbin:80" --annotation=konghq.com/strip-path=true
+### EXPOSIÇÃO DE API PARA SIMULAÇÃO
 
-curl -fsSL "http://$KONG_GATEWAY_DNS/api/anything?param1=example"
+#### EXECUÇÃO
+
+```
 
 
-
-kubectl apply -f https://reweave.azurewebsites.net/k8s/v1.29/net.yaml
 
 
 https://www.keycloak.org/getting-started/getting-started-kube
