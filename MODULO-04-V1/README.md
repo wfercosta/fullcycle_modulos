@@ -122,7 +122,7 @@ Caso você queira executar estas demonstrações no seu ambiente usando esta op�
 
 #### EXECUÇÃO
 
-Como primeiro passo, iremos criar o nosso cluster para testes locais usando o ``kind`, onde para este ambiente iremos provisionar um nó de _controlplane_ e outro de _dataplane_ (_worker_). Note que nesta configuração estamos adiconando uma configuração de _extraPortMappings_ que vai ser importante para realizarmos um _port forward_ a partir da porta local **80** para **31000** que irá nos dar acesso ao **Kong**:
+Como primeiro passo, iremos criar o nosso cluster para testes locais usando o `kind`, onde para este ambiente iremos provisionar um nó de _controlplane_ e outro de _dataplane_ (_worker_). Note que nesta configuração estamos adiconando uma configuração de _extraPortMappings_ que vai ser importante para realizarmos um _port forward_ a partir da porta local **80** para **31000** que irá nos dar acesso ao **Kong**:
 
 ```
 cat << EOF | kind create cluster --name=fc-k8s --config -
@@ -230,26 +230,17 @@ Para um teste de sanidade, iremos chamar o endpoint `/anything` do container que
 
 ```
 curl -fsSL "http://$KONG_GATEWAY_DNS/api/anything?param1=example"
-
 ```
 
 ### IMPLANTAÇÃO DE IDENTITY PROVIDER (IdP)
 
-#### EXECUÇÃO
-
-### CRIAÇÃO DE CREDENCIAIS DE APLICAÇÃO, SCOPES E VALIDAÇÃO VIA GATEWAY
+Agora que temos uma API para simular os nossos testes, agora precisamos de um IdP que irá nos ajudar a prover credenciais de acesso para usarmos nos nossos testes. Para este objetivo iremos utilizar o **Keycloack** realizando uma configuração usando kubernetes.
 
 #### EXECUÇÃO
+
+Primeiramente, com base na documentação do [Keycloack](https://www.keycloak.org/getting-started/getting-started-kube), iremos aplicar um manifesto de deployment para termos os nosso IdP executando no nosso ambiente de testes:
 
 ```
-
-
-
-
-https://www.keycloak.org/getting-started/getting-started-kube
-
-
-
 cat << EOF | kubectl apply  -f -
 apiVersion: apps/v1
 kind: Deployment
@@ -282,8 +273,6 @@ spec:
               value: "true"
             - name: KC_HEALTH_ENABLED
               value: "true"
-            - name: PROXY_ADDRESS_FORWARDING
-              value: "true"
           ports:
             - name: http
               containerPort: 8080
@@ -292,13 +281,185 @@ spec:
               path: /health/ready
               port: 9000
 EOF
-
-
-kubectl expose deployment keycloak --port=80 --target-port=8080 --name=keycloak
-kubectl create ingress keycloak --class=kong --rule="/*=keycloak:80" --annotation=konghq.com/strip-path=false
-
-http://ae885027b363d4c9fa40d8b62d2c4489-b43e93ebf9376250.elb.us-east-1.amazonaws.com/admin
-
 ```
 
-Por final, vamos fazer o cleanup do nosso ambiente e remover todos os recursos:
+Na sequëncia, iremos criar um _resourece_ do tipo _service_ para o nosso **Keycloack**:
+
+```
+kubectl expose deployment keycloak --port=80 --target-port=8080 --name=keycloak
+```
+
+Por último, iremos expor este serviço via _ingress controller_:
+
+```
+kubectl create ingress keycloak --class=kong --rule="/*=keycloak:80" --annotation=konghq.com/strip-path=false
+```
+
+Para validar o status do recursos implantados, podemos listar todos com o seguinte comando:
+
+```
+kubectl get deploy,svc,ing
+```
+
+Como último passo desta parte da deminstração, vamos acessar o console administrativo do **Keycloack**, usando o endereço que dá acesso ao seu ingress controle no path `/admin` usando as credenciais de acesso são usuário `admin` e senha `admin` e em seguida vamos alterar o tempo de expiração do access token no `master` realm:
+
+```
+echo "http://$KONG_GATEWAY_DNS/admin"
+```
+
+Para encerrar esta etapa de configuraça
+
+### CRIAÇÃO DE CREDENCIAIS DE APLICAÇÃO, SCOPES E VALIDAÇÃO VIA GATEWAY
+
+#### EXECUÇÃO
+
+```
+KEYCLOACK_ADMIN_ACCESS_TOKEN=$(curl -fsSL \
+    --header "Content-Type: application/x-www-form-urlencoded" \
+    --data "grant_type=password&client_id=admin-cli&username=admin&password=admin" \
+    --request POST http://$KONG_GATEWAY_DNS/realms/master/protocol/openid-connect/token \
+    | jq -r ."access_token")
+```
+
+```
+export KEYCLOACK_FC_REALM="fc-mod04"
+export KEYCLOACK_FC_CLIENT_ID=$(uuidgen)
+export KEYCLOACK_FC_SECRET_ID=$(uuidgen)
+```
+
+```
+curl -fsSL \
+    --header "Content-Type: application/json" \
+    --header "Authorization: Bearer $KEYCLOACK_ADMIN_ACCESS_TOKEN" \
+    --data "{\"realm\": \"$KEYCLOACK_FC_REALM\", \"displayName\": \"Fullcycle - Modulo 04\", \"enabled\": true}' \
+    --request POST http://$KONG_GATEWAY_DNS/admin/realms
+```
+
+```
+curl -fsSL \
+    --header "Content-Type: application/json" \
+    --header "Authorization: Bearer $KEYCLOACK_ADMIN_ACCESS_TOKEN" \
+    --data "{\"name\": \"$KEYCLOACK_FC_REALM\", \"clientId\": \"$KEYCLOACK_FC_CLIENT_ID\", \"secret\": \"$KEYCLOACK_FC_SECRET_ID\", \"serviceAccountsEnabled\": true}" \
+    --request POST http://$KONG_GATEWAY_DNS/admin/realms/$KEYCLOACK_FC_REALM/clients
+```
+
+```
+KEYCLOACK_FC_CLIENT_ID_UUID=$(curl -fsSL \
+    --header "Authorization: Bearer $KEYCLOACK_ADMIN_ACCESS_TOKEN" \
+    --request GET "http://$KONG_GATEWAY_DNS/admin/realms/$KEYCLOACK_FC_REALM/clients?clientId=$KEYCLOACK_FC_CLIENT_ID" \
+    | jq -rc '.[0].id')
+```
+
+```
+curl -fsSL \
+    --header "Content-Type: application/json" \
+    --header "Authorization: Bearer $KEYCLOACK_ADMIN_ACCESS_TOKEN" \
+    --data "{\"name\": \"httpbin:read:anything\", \"description\": \"Exemplo de scope\", \"protocol\": \"openid-connect\"}" \
+    --request POST http://$KONG_GATEWAY_DNS/admin/realms/$KEYCLOACK_FC_REALM/client-scopes
+```
+
+```
+KEYCLOACK_SCOPE_ID=$(curl -fsSL \
+ --header "Authorization: Bearer $KEYCLOACK_ADMIN_ACCESS_TOKEN" \
+    --request GET http://$KONG_GATEWAY_DNS/admin/realms/$KEYCLOACK_FC_REALM/client-scopes \
+    | jq -rc '.[] | select(.name=="httpbin:read:anything") | .id')
+```
+
+```
+curl -fsSL \
+    --header "Content-Type: application/json" \
+    --header "Authorization: Bearer $KEYCLOACK_ADMIN_ACCESS_TOKEN" \
+    --request PUT http://$KONG_GATEWAY_DNS/admin/realms/$KEYCLOACK_FC_REALM/clients/$KEYCLOACK_FC_CLIENT_ID_UUID/default-client-scopes/$KEYCLOACK_SCOPE_ID
+```
+
+```
+KEYCLOACK_CLIENT_ACCESS_TOKEN=$(curl -fsSL \
+ --header "Content-Type: application/x-www-form-urlencoded" \
+ --data "grant_type=client_credentials&client_id=$KEYCLOACK_FC_CLIENT_ID&client_secret=$KEYCLOACK_FC_SECRET_ID" \
+ --request POST http://$KONG_GATEWAY_DNS/realms/$KEYCLOACK_FC_REALM/protocol/openid-connect/token \
+ | jq -rc '.access_token')
+```
+
+KEYCLOACK_JWKS_URI=$(curl -fsSL http://localhost/realms/$KEYCLOACK_FC_REALM/.well-known/openid-configuration | jq -rc '.jwks_uri')
+
+curl -fsSL $KEYCLOACK_JWKS_URI | jq -c '.keys[] | select(.alg=="RS256")' | jq
+
+https://jwkset.com/inspect
+
+```
+cat << EOF | kubectl apply -f -
+apiVersion: configuration.konghq.com/v1
+kind: KongConsumer
+metadata:
+  name: api-client
+username: api-client
+credentials:
+  - api-client-jwt
+EOF
+```
+
+```
+cat << EOF | kubectl apply -f -
+apiVersion: configuration.konghq.com/v1
+kind: KongCredential
+metadata:
+  name: api-client-jwt
+type: jwt
+consumerRef: api-client
+config:
+  algorithm: RS256
+  key: http://localhost/realms/fc-mod04
+  rsa_public_key: |
+    -----BEGIN PUBLIC KEY-----
+    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtVYOHKVMO5SfXCVnRURu
+    P48iEeAOq9zQ1wlTEmxfvedRBB9OdH3BcwQfp/WvBvKxuK7Kx/Z348/Ck7aIDEBT
+    gR6kAG6eidjMArxnIZwJWX3QQGwZg3vK0qse1Z5ttXmqCHj8T4GoNHe6qnXw9ifR
+    T7jgfYblXOTdmgKeHjorVm+Njp+5Nhjk76nQLfnT79JaNbWNa1V4On8PBM+bbgUp
+    7kDm7zQTptH84OZwdHF276pxt1iMjj4qbgM7Y2S/YCWZcVPd9DMVKGFPzxh88Uax
+    Hi4MHOrbT8D7x3djQARxgH/DQ4U2kHhGyt+HnRSLidHRTfqd0piHyx7tqDx56oHk
+    kQIDAQAB
+    -----END PUBLIC KEY-----
+EOF
+```
+
+```
+cat << EOF | kubectl apply -f -
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-auth
+plugin: jwt
+config:
+  key_claim_name: iss   # O claim do JWT que o Kong vai usar para buscar o "key"
+  run_on_preflight: true
+  claims_to_verify:
+    - exp
+    - iat
+EOF
+```
+
+kubectl patch ingress mying --type='json' -p='[{"op": "add", "path": "/metadata/annotations/kubernetes.io~1ingress.class", "value":"nginx"}]'
+kubectl annotate ingress mying kubernetes.io/ingress.class=value
+
+```
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minha-api
+  annotations:
+    konghq.com/plugins: jwt-auth
+    konghq.com/strip-path: "true"
+spec:
+  ingressClassName: kong
+  rules:
+    - host: minha-api.seudominio.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: meu-servico
+                port:
+                  number: 80
+```
