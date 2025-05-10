@@ -447,30 +447,3 @@ EOF
 ```
 kubectl annotate ingress httpbin konghq.com/plugins=fc-mod04-jwt-plugin
 ```
-
-```
-
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-name: minha-api
-annotations:
-konghq.com/plugins: jwt-auth
-konghq.com/strip-path: "true"
-spec:
-ingressClassName: kong
-rules: - host: minha-api.seudominio.com
-http:
-paths: - path: /api
-pathType: Prefix
-backend:
-service:
-name: meu-servico
-port:
-number: 80
-
-```
-
-```
-
-```
