@@ -380,45 +380,52 @@ KEYCLOACK_CLIENT_ACCESS_TOKEN=$(curl -fsSL \
  | jq -rc '.access_token')
 ```
 
-KEYCLOACK_JWKS_URI=$(curl -fsSL http://localhost/realms/$KEYCLOACK_FC_REALM/.well-known/openid-configuration | jq -rc '.jwks_uri')
+```
+KEYCLOACK_JWKS_URI=$(curl -fsSL http://$KONG_GATEWAY_DNS/realms/$KEYCLOACK_FC_REALM/.well-known/openid-configuration | jq -rc '.jwks_uri')
+```
 
-curl -fsSL $KEYCLOACK_JWKS_URI | jq -c '.keys[] | select(.alg=="RS256")' | jq
+```
+cat <<EOF | openssl x509 -pubkey -noout > key.pem
+-----BEGIN CERTIFICATE-----
+$(curl $KEYCLOACK_JWKS_URI \
+ | jq -r '.keys[] \
+ | select(.alg == "RS256").x5c[0]')
+-----END CERTIFICATE-----
+EOF
+```
 
-https://jwkset.com/inspect
+```
+RSA_PUBLIC_KEY=$(awk '{printf "%s\\n", $0}' key.pem)
+```
+
+```
+cat << EOF | envsubst | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+    name: fc-mod04-consumer-credential-jwk
+    labels:
+        konghq.com/credential: jwt
+stringData:
+  algorithm: RS256
+  key: http://$KONG_GATEWAY_DNS/realms/fc-mod04
+  rsa_public_key: $RSA_PUBLIC_KEY
+EOF
+
+```
 
 ```
 cat << EOF | kubectl apply -f -
 apiVersion: configuration.konghq.com/v1
 kind: KongConsumer
 metadata:
-  name: api-client
-username: api-client
+  name: fc-mod04-consumer
+  annotations:
+   kubernetes.io/ingress.class: kong
+username: fc-mod04-consumer
+custom_id: fc-mod04-consumer
 credentials:
-  - api-client-jwt
-EOF
-```
-
-```
-cat << EOF | kubectl apply -f -
-apiVersion: configuration.konghq.com/v1
-kind: KongCredential
-metadata:
-  name: api-client-jwt
-type: jwt
-consumerRef: api-client
-config:
-  algorithm: RS256
-  key: http://localhost/realms/fc-mod04
-  rsa_public_key: |
-    -----BEGIN PUBLIC KEY-----
-    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtVYOHKVMO5SfXCVnRURu
-    P48iEeAOq9zQ1wlTEmxfvedRBB9OdH3BcwQfp/WvBvKxuK7Kx/Z348/Ck7aIDEBT
-    gR6kAG6eidjMArxnIZwJWX3QQGwZg3vK0qse1Z5ttXmqCHj8T4GoNHe6qnXw9ifR
-    T7jgfYblXOTdmgKeHjorVm+Njp+5Nhjk76nQLfnT79JaNbWNa1V4On8PBM+bbgUp
-    7kDm7zQTptH84OZwdHF276pxt1iMjj4qbgM7Y2S/YCWZcVPd9DMVKGFPzxh88Uax
-    Hi4MHOrbT8D7x3djQARxgH/DQ4U2kHhGyt+HnRSLidHRTfqd0piHyx7tqDx56oHk
-    kQIDAQAB
-    -----END PUBLIC KEY-----
+  - fc-mod04-consumer-credential-jwk
 EOF
 ```
 
@@ -427,39 +434,43 @@ cat << EOF | kubectl apply -f -
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
 metadata:
-  name: jwt-auth
+    name: fc-mod04-jwt-plugin
 plugin: jwt
 config:
-  key_claim_name: iss   # O claim do JWT que o Kong vai usar para buscar o "key"
-  run_on_preflight: true
-  claims_to_verify:
-    - exp
-    - iat
+    key_claim_name: iss
+    run_on_preflight: true
+    claims_to_verify:
+      - exp
 EOF
 ```
 
-kubectl patch ingress mying --type='json' -p='[{"op": "add", "path": "/metadata/annotations/kubernetes.io~1ingress.class", "value":"nginx"}]'
-kubectl annotate ingress mying kubernetes.io/ingress.class=value
+```
+kubectl annotate ingress httpbin konghq.com/plugins=fc-mod04-jwt-plugin
+```
 
 ```
+
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: minha-api
-  annotations:
-    konghq.com/plugins: jwt-auth
-    konghq.com/strip-path: "true"
+name: minha-api
+annotations:
+konghq.com/plugins: jwt-auth
+konghq.com/strip-path: "true"
 spec:
-  ingressClassName: kong
-  rules:
-    - host: minha-api.seudominio.com
-      http:
-        paths:
-          - path: /api
-            pathType: Prefix
-            backend:
-              service:
-                name: meu-servico
-                port:
-                  number: 80
+ingressClassName: kong
+rules: - host: minha-api.seudominio.com
+http:
+paths: - path: /api
+pathType: Prefix
+backend:
+service:
+name: meu-servico
+port:
+number: 80
+
+```
+
+```
+
 ```
