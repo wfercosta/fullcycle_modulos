@@ -331,7 +331,7 @@ export KEYCLOACK_FC_SECRET_ID=$(uuidgen)
 curl -fsSL \
     --header "Content-Type: application/json" \
     --header "Authorization: Bearer $KEYCLOACK_ADMIN_ACCESS_TOKEN" \
-    --data "{\"realm\": \"$KEYCLOACK_FC_REALM\", \"displayName\": \"Fullcycle - Modulo 04\", \"enabled\": true}' \
+    --data "{\"realm\": \"$KEYCLOACK_FC_REALM\", \"displayName\": \"Fullcycle - Modulo 04\", \"enabled\": true}" \
     --request POST http://$KONG_GATEWAY_DNS/admin/realms
 ```
 
@@ -373,14 +373,6 @@ curl -fsSL \
 ```
 
 ```
-KEYCLOACK_CLIENT_ACCESS_TOKEN=$(curl -fsSL \
- --header "Content-Type: application/x-www-form-urlencoded" \
- --data "grant_type=client_credentials&client_id=$KEYCLOACK_FC_CLIENT_ID&client_secret=$KEYCLOACK_FC_SECRET_ID" \
- --request POST http://$KONG_GATEWAY_DNS/realms/$KEYCLOACK_FC_REALM/protocol/openid-connect/token \
- | jq -rc '.access_token')
-```
-
-```
 KEYCLOACK_JWKS_URI=$(curl -fsSL http://$KONG_GATEWAY_DNS/realms/$KEYCLOACK_FC_REALM/.well-known/openid-configuration | jq -rc '.jwks_uri')
 ```
 
@@ -395,23 +387,15 @@ EOF
 ```
 
 ```
-RSA_PUBLIC_KEY=$(awk '{printf "%s\\n", $0}' key.pem)
+kubectl create secret generic fc-mod04-consumer-credential-jwk \
+ --from-literal="algorithm=RS256" \
+ --from-literal="key=http://$KONG_GATEWAY_DNS/realms/fc-mod04" \
+ --from-literal="kongCredType=jwt" \
+ --from-file="rsa_public_key=./key.pem"
 ```
 
 ```
-cat << EOF | envsubst | kubectl apply -f -
-apiVersion: v1
-kind: Secret
-metadata:
-    name: fc-mod04-consumer-credential-jwk
-    labels:
-        konghq.com/credential: jwt
-stringData:
-  algorithm: RS256
-  key: http://$KONG_GATEWAY_DNS/realms/fc-mod04
-  rsa_public_key: $RSA_PUBLIC_KEY
-EOF
-
+kubectl label secret fc-mod04-consumer-credential-jwk konghq.com/credential=jwt
 ```
 
 ```
@@ -421,9 +405,9 @@ kind: KongConsumer
 metadata:
   name: fc-mod04-consumer
   annotations:
-   kubernetes.io/ingress.class: kong
+    kubernetes.io/ingress.class: kong
 username: fc-mod04-consumer
-custom_id: fc-mod04-consumer
+custom_id: 08433C12-2B81-4738-B61D-3AA2136F0212
 credentials:
   - fc-mod04-consumer-credential-jwk
 EOF
@@ -446,4 +430,19 @@ EOF
 
 ```
 kubectl annotate ingress httpbin konghq.com/plugins=fc-mod04-jwt-plugin
+```
+
+```
+KEYCLOACK_CLIENT_ACCESS_TOKEN=$(curl -fsSL \
+ --header "Content-Type: application/x-www-form-urlencoded" \
+ --data "grant_type=client_credentials&client_id=$KEYCLOACK_FC_CLIENT_ID&client_secret=$KEYCLOACK_FC_SECRET_ID" \
+ --request POST http://$KONG_GATEWAY_DNS/realms/$KEYCLOACK_FC_REALM/protocol/openid-connect/token \
+ | jq -rc '.access_token')
+```
+
+```
+curl -fsSL \
+    --header "Content-Type: application/json" \
+    --header "Authorization: Bearer $KEYCLOACK_CLIENT_ACCESS_TOKEN" \
+    --request GET "http://$KONG_GATEWAY_DNS/api/anything?param1=example"
 ```
