@@ -2,7 +2,7 @@
 
 ## INTRODUÇÃO
 
-Para esta demonstração de configurações avançadas de segurança no API Gatway, iremos implementa-las utilizando o Kong Gatway. Para tanto, nós vamos precisar criar um ambiente de testes utilizando um cluster Kubernetees com o Kong Ingress Controller, cujo implementa o Kong Gatway.
+Para esta demonstração de configurações avançadas de segurança no API Gateway, iremos implementá-las utilizando o Kong Gateway. Para tanto, nós precisamos criar um ambiente de testes utilizando um cluster Kubernetees com o Kong Ingress Controller, cujo implementa o Kong Gateway.
 
 Para a criação deste ambiente, vamos deixar duas opções. Uma primeira com base em ambiente Amazon Web Services utilizando o serviço do AWS Elastic Kubernetes Service (EKS). E para aqueles que preferem executar em um ambiente local os seus testes, deixaremos como opção de configurar utilizando o projeto do Kind.
 
@@ -97,7 +97,7 @@ echo "DNS: $KONG_GATEWAY_DNS, ARN:$KONG_GATEWAY_NLB_ARN"
 
 Após o término desta demonstração, para desprovisionar os recursos é importante executar os comandos abaixo em sequência para evitar que o _cloudformation_ fique impossibilitado de finalizar a remoção dos recursos da conta.
 
-Primeiramente precisamos desinstalar o **Kong Ingress Controller**, onde uma vez removido as configurações dele o **AWS Load Balancer Controler** irá indentificar que o _Load Balancer_ que fora criado para o **Kong** precisa ser removido:
+Primeiramente precisamos desinstalar o **Kong Ingress Controller**, onde uma vez removido as configurações dele o **AWS Load Balancer Controller** irá indentificar que o _Load Balancer_ que fora criado para o **Kong** precisa ser removido:
 
 ```
 helm uninstall kong -n kong
@@ -122,7 +122,7 @@ Caso você queira executar estas demonstrações no seu ambiente usando esta op�
 
 #### EXECUÇÃO
 
-Como primeiro passo, iremos criar o nosso cluster para testes locais usando o `kind`, onde para este ambiente iremos provisionar um nó de _controlplane_ e outro de _dataplane_ (_worker_). Note que nesta configuração estamos adiconando uma configuração de _extraPortMappings_ que vai ser importante para realizarmos um _port forward_ a partir da porta local **80** para **31000** que irá nos dar acesso ao **Kong**:
+Como primeiro passo, iremos criar o nosso cluster para testes locais usando o `kind`, onde para este ambiente iremos provisionar um nó de _controlplane_ e outro de _dataplane_ (_worker_). Note que nesta configuração estamos adicionando uma configuração de _extraPortMappings_ que vai ser importante para realizarmos um _port forward_ a partir da porta local **80** para **31000** que irá nos dar acesso ao **Kong**:
 
 ```
 cat << EOF | kind create cluster --name=fc-k8s --config -
@@ -140,7 +140,7 @@ nodes:
 EOF
 ```
 
-Ao término da configuração do cluster local, provavelmente já estará confiugrando no seu `kubectl` como ambiente atual.
+Ao término da configuração do cluster local, provavelmente já estará configurado no seu `kubectl` como ambiente atual.
 Para validar o provisionamento do cluster, podemos tentar executar um comando para recuperar as informações dos nós que fazem parte dele:
 
 ```
@@ -161,7 +161,7 @@ helm install kong kong/kong --namespace kong --create-namespace \
   --set proxy.type=NodePort
 ```
 
-Como configuramos o nosso `kind` com um _port forward_ --> **80:31000**, precisamos ajustar a configuração do serviço que foi criado no passo anterior, alterando o `NodePort` randomico para seja de acordo com a configuração do `kind`:
+Como configuramos o nosso `kind` com um _port forward_ --> **80:31000**, precisamos ajustar a configuração do serviço que foi criado no passo anterior, alterando o `NodePort` randômico para seja de acordo com a configuração do `kind`:
 
 ```
 export KONG_GATEWAY_NODE_PORT_CURRENT=$(kubectl -n kong get svc kong-kong-proxy \
@@ -239,6 +239,7 @@ Agora que temos uma API para simular os nossos testes, agora precisamos de um Id
 #### EXECUÇÃO
 
 Primeiramente, com base na documentação do [Keycloack](https://www.keycloak.org/getting-started/getting-started-kube), iremos aplicar um manifesto de deployment para termos os nosso IdP executando no nosso ambiente de testes:
+//KC_HOSTNAME=http://localhost:8080/ and KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true
 
 ```
 cat << EOF | kubectl apply  -f -
@@ -301,17 +302,21 @@ Para validar o status do recursos implantados, podemos listar todos com o seguin
 kubectl get deploy,svc,ing
 ```
 
-Como último passo desta parte da deminstração, vamos acessar o console administrativo do **Keycloack**, usando o endereço que dá acesso ao seu ingress controle no path `/admin` usando as credenciais de acesso são usuário `admin` e senha `admin` e em seguida vamos alterar o tempo de expiração do access token no `master` realm:
+Como último passo desta parte da demonstração, vamos acessar o console administrativo do **Keycloack**, usando o endereço que dá acesso ao seu ingress controle no path `/admin` usando as credenciais de acesso são usuário `admin` e senha `admin` e em seguida vamos alterar o tempo de expiração do access token no `master` realm:
 
 ```
 echo "http://$KONG_GATEWAY_DNS/admin"
 ```
 
-Para encerrar esta etapa de configuraça
+Para encerrar esta etapa de configuração
 
-### CRIAÇÃO DE CREDENCIAIS DE APLICAÇÃO, SCOPES E VALIDAÇÃO VIA GATEWAY
+### CRIAÇÃO DE CREDENCIAIS DE APLICAÇÃO DE TESTE
+
+Agora que temos o nosso _Indentity Provider_ _up & running_, podemos criar uma credencial de aplicação para teste. No contexto do _Keycloack_ credenciais de aplicação são chamadas de de _clients_, onde este pode ter _scopes_, _roles_ e atributos customizados.
 
 #### EXECUÇÃO
+
+O primeiro passo é obtermos o um _access token_ do usuário `admin`que irá permitir que realizemos requisições a API rest do _Keycloack_:
 
 ```
 KEYCLOACK_ADMIN_ACCESS_TOKEN=$(curl -fsSL \
@@ -321,13 +326,10 @@ KEYCLOACK_ADMIN_ACCESS_TOKEN=$(curl -fsSL \
     | jq -r ."access_token")
 ```
 
-```
-export KEYCLOACK_FC_REALM="fc-mod04"
-export KEYCLOACK_FC_CLIENT_ID=$(uuidgen)
-export KEYCLOACK_FC_SECRET_ID=$(uuidgen)
-```
+O próximo passo é criarmos um novo _realm_ para criarmos os nossas credenciais de aplicação para esta demonstração:
 
 ```
+export KEYCLOACK_FC_REALM="fc-mod04"
 curl -fsSL \
     --header "Content-Type: application/json" \
     --header "Authorization: Bearer $KEYCLOACK_ADMIN_ACCESS_TOKEN" \
@@ -335,7 +337,12 @@ curl -fsSL \
     --request POST http://$KONG_GATEWAY_DNS/admin/realms
 ```
 
+Com o _realm_ criado, podemos iniciar com a criação do nossa credencial de aplicação para testes:
+
 ```
+export KEYCLOACK_FC_CLIENT_ID=$(uuidgen)
+export KEYCLOACK_FC_SECRET_ID=$(uuidgen)
+
 curl -fsSL \
     --header "Content-Type: application/json" \
     --header "Authorization: Bearer $KEYCLOACK_ADMIN_ACCESS_TOKEN" \
@@ -343,12 +350,16 @@ curl -fsSL \
     --request POST http://$KONG_GATEWAY_DNS/admin/realms/$KEYCLOACK_FC_REALM/clients
 ```
 
+Uma vez que seja criado a credencial, precisamos recuperar o `UUID`da mesma para usarmos nas próximas etapas de configuração:
+
 ```
 KEYCLOACK_FC_CLIENT_ID_UUID=$(curl -fsSL \
     --header "Authorization: Bearer $KEYCLOACK_ADMIN_ACCESS_TOKEN" \
     --request GET "http://$KONG_GATEWAY_DNS/admin/realms/$KEYCLOACK_FC_REALM/clients?clientId=$KEYCLOACK_FC_CLIENT_ID" \
     | jq -rc '.[0].id')
 ```
+
+Para esta demonstração iremos usar o scope `httpbin:read:anything`, onde precisamos cria-la no `Keycloack`:
 
 ```
 curl -fsSL \
@@ -365,6 +376,8 @@ KEYCLOACK_SCOPE_ID=$(curl -fsSL \
     | jq -rc '.[] | select(.name=="httpbin:read:anything") | .id')
 ```
 
+Uma vez criada, precisamos incluir ela à nossa credencial:
+
 ```
 curl -fsSL \
     --header "Content-Type: application/json" \
@@ -372,12 +385,22 @@ curl -fsSL \
     --request PUT http://$KONG_GATEWAY_DNS/admin/realms/$KEYCLOACK_FC_REALM/clients/$KEYCLOACK_FC_CLIENT_ID_UUID/default-client-scopes/$KEYCLOACK_SCOPE_ID
 ```
 
+### IMPLEMENTAÇÃO DE VALIDAÇÃO DE TOKEN JWT
+
+Agora que temos a nossa credencial criada precisamos configurar o plugin JWT do _Kong_ para que seja possível ele validar o token usando a assinatura do mesmo.
+
+#### EXECUÇAO
+
+O primeiro passo é através do `.well-known`, _endpoint_ de metadados de informações de autenticação e autorização que é disponibilizado pelo _Kong_ buscarmos o `jwks_uri` (_JSON Web Key Set_) cujo possui as **chaves públicas** que precisamos para validar o _token_:
+
 ```
 KEYCLOACK_JWKS_URI=$(curl -fsSL http://$KONG_GATEWAY_DNS/realms/$KEYCLOACK_FC_REALM/.well-known/openid-configuration | jq -rc '.jwks_uri')
 ```
 
+Com posse da URI, conseguirmos obter o certificado X.509 que está codificado em Base64 e usando o `openssl` converter o mesmo em formato `pem`:
+
 ```
-cat <<EOF | openssl x509 -pubkey -noout > key.pem
+cat <<EOF | openssl x509 -pubkey -noout > keycloack-jwks-key.pem
 -----BEGIN CERTIFICATE-----
 $(curl $KEYCLOACK_JWKS_URI \
  | jq -r '.keys[] \
@@ -386,17 +409,23 @@ $(curl $KEYCLOACK_JWKS_URI \
 EOF
 ```
 
+Com base no certificado gerado, conseguimos criar uma `secret` no _Kubernetes_, informado o algoritmo usado pelo _token_, o _key_ que corresponde o valor do _iss_ do _token_ JWT, tipo de credencial e a chave pública RSA:
+
 ```
 kubectl create secret generic fc-mod04-consumer-credential-jwk \
  --from-literal="algorithm=RS256" \
  --from-literal="key=http://$KONG_GATEWAY_DNS/realms/fc-mod04" \
  --from-literal="kongCredType=jwt" \
- --from-file="rsa_public_key=./key.pem"
+ --from-file="rsa_public_key=./keycloack-jwks-key.pem"
 ```
+
+Uma parte importante deste setup é que o _Kong plugin_ precisa que haja um label definido na _secret_ para que ele possa localizar a validar a mesma:
 
 ```
 kubectl label secret fc-mod04-consumer-credential-jwk konghq.com/credential=jwt
 ```
+
+Agora que temos a nossa `secret` definida, podemos configurar o nosso `KongConsumer` que basicamente é a "identidade lógica do consumidor", onde neste contexto é um sistema externo com um _token_ JWT:
 
 ```
 cat << EOF | kubectl apply -f -
@@ -413,6 +442,8 @@ credentials:
 EOF
 ```
 
+O próximo definir as configurações do _plugin_ JWT:
+
 ```
 cat << EOF | kubectl apply -f -
 apiVersion: configuration.konghq.com/v1
@@ -428,9 +459,21 @@ config:
 EOF
 ```
 
+Neste ponto temos tudo que precisamos para colocar a nossa primeira camada de configuração na nossa API. Para adicionar efetivamente, precisamos alterar algumas configurações no nosso _ingress_ para aplicar o _plugin_, onde basicamente, precisamos adicionar uma anotação no mesmo:
+
 ```
 kubectl annotate ingress httpbin konghq.com/plugins=fc-mod04-jwt-plugin
 ```
+
+Para um primeiro teste, é esperado um `status code` com retorno `401` tendo em vista que a nossa requisição de testes não possui _token_:
+
+```
+curl -fsSL \
+    --header "Content-Type: application/json" \
+    --request GET "http://$KONG_GATEWAY_DNS/api/anything?param1=example"
+```
+
+Para o próximo teste, precisamos obter o _token_ da nossa credencial de aplicação:
 
 ```
 KEYCLOACK_CLIENT_ACCESS_TOKEN=$(curl -fsSL \
@@ -440,9 +483,33 @@ KEYCLOACK_CLIENT_ACCESS_TOKEN=$(curl -fsSL \
  | jq -rc '.access_token')
 ```
 
+Agora com um _token_ válido, é esperado um `status code` com retorno `200` tendo em vista que a nossa requisição de teste agora possui um _token_ válido:
+
 ```
 curl -fsSL \
     --header "Content-Type: application/json" \
     --header "Authorization: Bearer $KEYCLOACK_CLIENT_ACCESS_TOKEN" \
     --request GET "http://$KONG_GATEWAY_DNS/api/anything?param1=example"
+
+```
+
+### IMPLEMENTAÇÃO DE VALIDAÇÃO DOS SCOPES DO TOKEN JWT
+
+Agora que temos a assinatura do _access token_ da nossa credencial sendo validada, precisamos implementar a validaçáo dos scopes, para tanto, neste contexto iremos usar o OPA (Open Policy Agent) que usa o _rego_ que nada mais é que uma linguagem de politicas declarativas.
+
+#### EXECUÇAO
+
+```
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: opa-scope-check
+config:
+  policy: |
+    package kong.authz
+    default allow = false
+    allow {
+      input.jwt.scopes[_] == "read:orders"
+    }
+plugin: opa
 ```
