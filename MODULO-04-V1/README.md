@@ -493,23 +493,106 @@ curl -fsSL \
 
 ```
 
-### IMPLEMENTAÇÃO DE VALIDAÇÃO DOS SCOPES DO TOKEN JWT
+### IMPLEMENTAÇÃO DE MTLS
+
+(KONG MTLS PLUGIN)[https://docs.konghq.com/kubernetes-ingress-controller/latest/plugins/mtls/]
+
+#### EXECUÇAO
+
+### EXEMPLO DE CONFIGURAÇÃO DE OPA COM REGO
 
 Agora que temos a assinatura do _access token_ da nossa credencial sendo validada, precisamos implementar a validaçáo dos scopes, para tanto, neste contexto iremos usar o OPA (Open Policy Agent) que usa o _rego_ que nada mais é que uma linguagem de politicas declarativas.
+
+(KONG OPA PLUGIN)[https://docs.konghq.com/hub/kong-inc/opa/]
 
 #### EXECUÇAO
 
 ```
+cat << EOF > policy_001.rego
+package policy_001
+
+default allow := false
+
+allow if {
+	input.request.http.path == "/api/anything"
+	input.request.http.method == "GET"
+    contains(claims.scope, "httpbin:read:anything")
+}
+
+claims := payload if {
+	[_, payload, _] := io.jwt.decode(bearer_token)
+}
+
+bearer_token := t if {
+	v := input.request.http.headers.authorization
+	startswith(v, "Bearer ")
+	t := substring(v, count("Bearer "), -1)
+}
+EOF
+```
+
+```
+kubectl create configmap fc-mod04-opa-policy --from-file=policy_001.rego
+```
+
+```
+cat << EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa
+  labels:
+    app: opa
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opa
+  template:
+    metadata:
+      labels:
+        app: opa
+      name: opa
+    spec:
+      containers:
+      - name: opa
+        image: openpolicyagent/opa:1.4.2
+        ports:
+        - name: http
+          containerPort: 8181
+        args:
+        - "run"
+        - "--ignore=.*"
+        - "--server"
+        - "/policies"
+        volumeMounts:
+        - readOnly: true
+          mountPath: /policies
+          name: policies-dir
+      volumes:
+      - name: policies-dir
+        configMap:
+          name: fc-mod04-opa-policy
+EOF
+```
+
+```
+kubectl expose deploy opa --port=80 --target-port=8181 --name=opa
+```
+
+```
+kubeclt port-forward services/opa 8080:80
+```
+
+```
+cat << EOF | kubectl apply -f -
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
 metadata:
-  name: opa-scope-check
-config:
-  policy: |
-    package kong.authz
-    default allow = false
-    allow {
-      input.jwt.scopes[_] == "read:orders"
-    }
+  name: fc-mod04-opa-plugin
 plugin: opa
+config:
+  opa_host: "http://opa.default.svc.cluster.local"
+  policy_uri: "v1/data/policy_001"
+EOF
 ```
