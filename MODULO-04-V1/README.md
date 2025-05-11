@@ -493,12 +493,6 @@ curl -fsSL \
 
 ```
 
-### IMPLEMENTAÇÃO DE MTLS
-
-(KONG MTLS PLUGIN)[https://docs.konghq.com/kubernetes-ingress-controller/latest/plugins/mtls/]
-
-#### EXECUÇAO
-
 ### EXEMPLO DE CONFIGURAÇÃO DE OPA COM REGO
 
 Agora que temos a assinatura do _access token_ da nossa credencial sendo validada, precisamos implementar a validaçáo dos scopes, para tanto, neste contexto iremos usar o OPA (Open Policy Agent) que usa o _rego_ que nada mais é que uma linguagem de politicas declarativas.
