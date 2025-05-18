@@ -239,7 +239,6 @@ Agora que temos uma API para simular os nossos testes, agora precisamos de um Id
 #### EXECUÇÃO
 
 Primeiramente, com base na documentação do [Keycloack](https://www.keycloak.org/getting-started/getting-started-kube), iremos aplicar um manifesto de deployment para termos os nosso IdP executando no nosso ambiente de testes:
-//KC_HOSTNAME=http://localhost:8080/ and KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true
 
 ```
 cat << EOF | kubectl apply  -f -
